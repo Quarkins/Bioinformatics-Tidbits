@@ -1,0 +1,174 @@
+---
+title: "Untitled"
+author: "MCRI"
+date: "25 February 2016"
+output: pdf_document
+
+---
+
+[//]: # (I want to make a little skeleton script for standard reporting in R markdown for differential analysis)
+
+# 1 Introduction
+
+[//]: # ( Describe simply the project)
+
+INSERT HERE
+
+E.g. This data is from Peter Houweling from MCRI. The sequencing was performed at bla bla and comprised of 75bp paired end reads. The data are from a wild type mice and knockout mice (where the gene Actn3 has been surpressed) then RNA is extracted under two different conditions: when the mouse is at room temperature and when it is cooled below reoom temperature. The comparison of most interest is  to see the genes which change differently in the wild type under the two conditions compared to the knockout mice. The preliminary results are using samples taken from Muscle tissue.
+
+[//]: # ( Before running the next part you need a counts.txt file with counts and a Summary.txt file made from the python script to extract the read statistics.)
+
+```{r,echo=FALSE,include=FALSE}
+
+# Now we wish to read in the counts and summary files, make our design matrix and fit with voom as standard
+options(digits=3)
+library(edgeR)
+library(EDASeq)
+library(gplots)
+library(RColorBrewer)
+
+#Lets read in the data
+counts <- read.table("counts.txt",header=TRUE,sep='\t',row.names=1)
+
+#Create summary table
+readSummary <- read.table("SummaryAll.txt",header=TRUE,sep=',',row.names=1,check.names = FALSE)
+#Create last two columns
+readSummary$CountOverGenes = colSums(counts[,-c(1:5)])
+readSummary$XInGenes = (readSummary$CountOverGenes/readSummary$NumUniqMapped)*100
+
+#Now either read in the targets info from targets.txt or create a dataframe with the target info
+#E.g.
+targets <- read.delim("targets.txt",stringsAsFactors=FALSE,header=TRUE)
+
+
+#Now create DGe list
+y <- DGEList(counts[,-(1:6)]) #Remove all other columns with no gene data
+
+#Only keep if the counts per million are greater than 1 in at 2 or more samples
+keep <- rowSums(cpm(y)>=1) >= min(table(targets))
+y.keep <-y[keep,]
+
+#Build your design matrix - this is analysis specific
+#### MODIFY
+design <-model.matrix(~0+TS)
+
+#Normalise
+y.keep <- calcNormFactors(y.keep)
+y.keep <- estimateDisp(y.keep, design)
+```
+
+# 2 Read mapping and summarisation
+
+[//]: # ( Describe the allignement and mapping methods)
+
+INSERT HERE
+
+E.g. The STAR aligner was used to map th paired ends reads to the mouse genome, mm10, in the two pass mapping mode. Gencode VM4 comprehenseive annotation was downloaded from the UCSC table browser. The genome files used for the mapping were mm10.fa and GencodeVM4mm10.gtf. featureCounts was used to summarise the reads across the genes, counting only uniquely mapped genes using a parsed version of the GTF file (mm10_GENCODEVM4_COmp.saf). the mapping statistics are presented in the table below. About ~80% of the total read were able to be mapped uniquely for each sample.
+
+# 3 Quality Control
+
+[//]: # ( Do the standard quality control bits and pieces)
+
+Once the counts table was generated, the data was analysed in R using edgeR and limma Bioconductor packages. Genes that had at least 1 count per million in at least `r min(table(targets))` samples were kept for further analyses (`r nrow(y.keep)` genes). 
+
+```{r,tidy=TRUE}
+library(knitr)
+kable(readSummary)
+```
+
+
+
+In order to check the quality of our data we look at four key plots. The first is an MDS plot of the raw counts to see that the samples cluster as expected. The second is the Relative log expression plot which displays the variability of the different samples. Thirdly, the mean variance relationship for the data set, which shows how variance varies with the mean for a given gene as well as showing the trends. The final plot is simply a check that the library sizes of the different samples are roughly similar.
+
+```{r,tidy=TRUE}
+#par(mfrow=c(2,2))
+#par(mar=c(6,4,2,2))
+
+#N.B. Here you will need to make sure appropriate labels and colours are used
+
+#Raw MDS
+plotMDS(y.keep,labels=TS,col=as.integer(as.factor(targets$types)),cex=0.8)
+legend("bottomright",legend=unique(levels(as.factor(targets$types))),fill=1:4,cex=0.8)
+title("MDS plot - Dim 1 and Dim 2")
+
+#Check the variance with an RLE (Relative Log Expression)
+plotRLE(cpm(y.keep),las=2,ylim=c(-1,1),main='RLE plot showing sample variability',names=TS, cex.axis=0.7,
+        col=as.integer(as.factor(targets$types)))
+
+
+#Check the mean variance relationship and highlight the most variable genes
+big <-y.keep$tagwise.disp^0.5 > 0.8
+plot(y.keep$AveLogCPM[!big],y.keep$tagwise.disp[!big]^0.5,pch=16,cex=0.35,ylim=c(-0.1,1.4),
+     ylab = "Biological Coefficient of variation",xlab="Average Log CPM",main='Mean Variance Relationship')
+text(y.keep$AveLogCPM[big],y.keep$tagwise.disp[big]^0.5,labels=rownames(y.keep)[big],col=2,cex=0.7)
+#Draw some trend lines
+abline(h=y.keep$common.disp^0.5,col=2,lwd=2)
+o <- order(y.keep$AveLogCPM)
+lines(y.keep$AveLogCPM[o],y.keep$trended.disp[o]^0.5,col=4,lwd=2)
+legend("topright",legend=c("Tagwise","Trended","Common"),col=c(1,2,4),cex=0.7,pch=16)
+
+#Check log number of reads
+barplot(log(colSums(y.keep$counts)),names=TS,las=2,ylab='Number of reads',xlab='samples')
+
+```
+
+# 4 Analysis
+
+[//]: # ( Now it is time to do the standard toptable diff exp analysis)
+
+```{r,tidy=TRUE}
+v <- voom(y.keep,design)
+
+fit <- lmFit(v,design)
+
+#Make Contrasts specific to analysis
+contrast = makeContrasts()
+
+#Rescaled fitting to contrasts
+fit.contr <- contrasts.fit(fit,contrast)
+fit.contr <- eBayes(fit.contr,robust=TRUE)
+
+results <- decideTests(fit.contr)
+```
+
+NOW YOU ARE ON YOUR OWN, NOT ALL ANALYSES ARE EXACTLY THE SAME
+
+But you probably want to make some top tables......
+
+```{r,tidy=TRUE}
+print("Summary")
+summary(results)
+
+print("RT vs CO in WT")
+topTable(fit.contr,coef=1)
+
+print("RT vs CO in KO")
+topTable(fit.contr,coef=2)
+```
+
+And maybe som classic logFoldChange plots
+
+```{r,tidy=TRUE}
+plot(fit.contr$Amean,fit.contr$coeff[,1],pch=16,cex=0.5,xlab="Average Log expression",ylab='LogFC')
+points(fit.contr$Amean[results[,1]!=0],fit.contr$coeff[results[,1]!=0,1],pch=16,cex=0.6,col=2)
+abline(h=0,col='grey')
+title('')
+
+plot(fit.contr$Amean,fit.contr$coeff[,2],pch=16,cex=0.5,xlab="Average Log expression",ylab='LogFC')
+points(fit.contr$Amean[results[,2]!=0],fit.contr$coeff[results[,2]!=0,2],pch=16,cex=0.6,col=2)
+abline(h=0,col='grey')
+title('')
+
+#Comparison plot with significant genes highlighted with colour codes
+plot(fit.contr$coeff[,1],fit.contr$coeff[,2])
+abline(h=0,v=0,col='grey')
+abline(a=0,b=1,col=4)
+
+points(fit.contr$coeff[results[,2] != 0,1],fit.contr$coeff[results[,2] != 0,2],col=4,pch=16,cex=0.5)
+points(fit.contr$coeff[results[,1] != 0,1],fit.contr$coeff[results[,1] != 0,2],col="purple",pch=16,cex=0.5)
+points(fit.contr$coeff[results[,1] != 0  & results[,2] != 0,1], 
+       fit.contr$coeff[results[,1] != 0  & results[,2] != 0,2],
+       col=2,pch=16,cex=0.5)
+legend("bottomright" , legend=c("Contrast1","Contrast2","Both","NS"),col=c("purple","blue","red","black")
+       ,pch=16,cex=0.8)
+```
