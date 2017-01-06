@@ -1,5 +1,5 @@
 # Bioinformatics-Tidbits
-A collection of scripts and files used whilst bioinformaticsing
+A collection of scripts and files used whilst bioinformagicianing
 
 **BioNetwork_2.R** - A script to produce a network graph of the MCRI bioinformatics collaborations with other groups based on a google docs spreadsheet.
 
