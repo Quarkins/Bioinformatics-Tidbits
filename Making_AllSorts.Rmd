@@ -1,9 +1,9 @@
 ---
-title: "Making BALL v4"
+title: "Making AllSorts v4"
 output: html_notebook
 ---
 ---
-title: "BALL: The combined B-ALL classifer using the St.Judes and Swedish Dataset"
+title: "AllSorts: The combined B-ALL classifer using the St.Judes and Swedish Dataset"
 output: html_notebook
 ---
 
@@ -154,7 +154,7 @@ pal = brewer.pal(9,"Set1")
 #Define marker set as a vector
 pchvec <- c(1:5)
 
-pdf('Baller_Figs/Base_MDS.pdf')
+pdf('AllSorts_Figs/Base_MDS.pdf')
 pchvec <- c(1:2)
 batch <- c(rep(1,289),rep(2,195))
 plotMDS(alls,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
@@ -229,7 +229,7 @@ plotMDS(res2,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],p
 legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=pchvec,cex=0.8)
 legend('topleft',legend=c("St.Judes","Lund"),pch=pchvec)
 
-pdf('Baller_Figs/Corrected_MDS.pdf')
+pdf('AllSorts_Figs/Corrected_MDS.pdf')
 pchvec <- c(1:2)
 batch <- c(rep(1,289),rep(2,195))
 plotMDS(res2,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
@@ -376,7 +376,7 @@ var.imp = data.frame(importance(RF1))
 #Looking into the importance of different variables
 varImpPlot(RF1)
 
-pdf("Baller_Figs/varImp.pdf")
+pdf("AllSorts_Figs/varImp.pdf")
 varImpPlot(RF1,main="Variables of importamce",n.var=20)
 dev.off()
 ```
@@ -454,7 +454,7 @@ yx <- as.matrix(topdata)
 
 heatmap.2(yx,colCol=pal[all_samp$Fusion],trace = "none",col =brewer.pal(11,"Spectral"))
 
-pdf("Baller_Figs/Heat_check.pdf")
+pdf("AllSorts_Figs/Heat_check.pdf")
 heatmap.2(yx,colCol=pal[all_samp$Fusion],trace = "none",col =brewer.pal(11,"Spectral"))
 dev.off()
 
@@ -468,7 +468,7 @@ plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=pal[all_samp$Fusion]
 legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=16)
 legend('bottomleft',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.5)
 
-pdf("Baller_Figs/MDS_check.pdf")
+pdf("AllSorts_Figs/MDS_check.pdf")
 pal = brewer.pal(9,"Set1")
 #Define marker set as a vector
 pchvec <- c(1:2)
@@ -498,7 +498,7 @@ plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=color[factor(all_sam
 legend('bottomleft',legend=unique(levels(factor(all_samp$Original_Class))),fill=color,pch=16,cex=0.5,ncol=2)
 legend('bottomright',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.5)
 
-pdf('Baller_Figs/Sub_Other.pdf')
+pdf('AllSorts_Figs/Sub_Other.pdf')
 plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=color[factor(all_samp$Original_Class)],pch=pchvec[batch])
 legend('bottomleft',legend=unique(levels(factor(all_samp$Original_Class))),fill=color,pch=16,cex=0.8,ncol=2)
 legend('bottomright',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.8)
@@ -567,7 +567,7 @@ confusion = as.data.frame(as.table(conf))
 gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))  
 gg + geom_tile() + labs(fill="Frequency") + geom_text(aes(label=Freq),show.legend = FALSE,colour="white")
 
-pdf('Baller_Figs/Test_success.pdf')
+pdf('AllSorts_Figs/Test_success.pdf')
 gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))  
 gg + geom_tile() + labs(fill="Frequency",x="Predicted") + geom_text(aes(label=Freq),show.legend = FALSE,colour="white")
 dev.off()
@@ -682,19 +682,19 @@ prob_plot('ETV',autre_out)
 prob_plot('ERG',autre_out)
 prob_plot('Other',autre_out)
 
-pdf('Baller_Figs/PhThresh.pdf')
+pdf('AllSorts_Figs/PhThresh.pdf')
 prob_plot('Phlike',autre_out)
 dev.off()
 
-pdf('Baller_Figs/ERGThresh.pdf')
+pdf('AllSorts_Figs/ERGThresh.pdf')
 prob_plot('ERG',autre_out)
 dev.off()
 
-pdf('Baller_Figs/ETVThresh.pdf')
+pdf('AllSorts_Figs/ETVThresh.pdf')
 prob_plot('ETV',autre_out)
 dev.off()
 
-pdf('Baller_Figs/OtherThresh.pdf')
+pdf('AllSorts_Figs/OtherThresh.pdf')
 prob_plot('Other',autre_out)
 dev.off()
 
