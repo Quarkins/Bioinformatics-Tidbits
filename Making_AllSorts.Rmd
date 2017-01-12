@@ -1,0 +1,868 @@
+---
+title: "Making BALL v4"
+output: html_notebook
+---
+---
+title: "BALL: The combined B-ALL classifer using the St.Judes and Swedish Dataset"
+output: html_notebook
+---
+
+#Introduction
+This notebook documents the creation of a B-ALL classifier constructed from two datasets ( St.Judes and Lund). The classifier will be a multi-class classifier utilisting the Random Forest algorithm native as implemented initially in Fortran and then R. By utilising two different datasets we hope to mitigate batch specific effects and biases as well as improve statistical power and classification clout.\\
+
+#Datasets
+
+##St.Judes 
+We have the log FPKM dataset for 289 patients at St.Judes (~150 with Phlike or Ph+) in which to use to train and test our classifier. The classifier aims to seperate patients into one of four categories: Phlike, ERG, ETV and Other (a miscellaneous category). 
+
+##Lund
+We have the RAW RNA-seq data for 195 patients taken at Lund University. The samples are for patients with paediatric B-Cell precursor acute lumphoblastic leukaemia (BCP ALL). Of these samples 127 (65%) had in-fram fusion genes observed. The Lund samples provide an additional group to the St.Judes which we call DUX4 (a recurrent IGH-DUX4 or ERG-DUX4 fusion).
+
+#Collating and Munging
+Firstly, we need to read in our data, do some munging and sculpt it into a useable form.
+
+```{r}
+library(edgeR)
+library(limma)
+library(gplots)
+library(statmod)
+library(RColorBrewer)
+library(randomForest)
+library(biomaRt)
+library(dplyr)
+library(RUVSeq)
+
+normalisedcounts= read.csv(file="ALL_FPKM_filtered_genes_log2signal_annot.txt",sep="\t",stringsAsFactors=FALSE,row.names=1)
+
+#Just take the sample columns, leave out the other annotational columns
+ncounts = normalisedcounts[,1:289]
+
+#Normalise counts
+#ncounts2 = t(apply(ncounts,1, function(x) (x - min(x))/(max(x) - min(x))))
+#normalisedcounts[,1:289] = ncounts2
+
+
+#Figure out the classes
+#Make the groupings from Phlike and non phlike
+pheno = strsplit2(colnames(ncounts),".Aligned",fixed=TRUE)[,1]
+#Change underscore string to dots
+pheno = gsub("___________",".",pheno)
+pheno = gsub("__________",".",pheno)
+pheno = gsub("_________",".",pheno)
+pheno = gsub("________",".",pheno)
+pheno = gsub("_______",".",pheno)
+
+tmp = strsplit2(pheno,".",fixed=TRUE) #Split the string by .
+#Make chained ifelse statement
+targets = data.frame(Fusion = ifelse(grepl("Phlike", tmp[,1]) | grepl("PHALL", tmp[,1]), "Phlike", 
+                                   ifelse(grepl("ERG", tmp[,1]), "ERG",
+                                          ifelse(grepl("ETV", tmp[,1]),"ETV","Other"))),
+                   Sex = ifelse(t(ncounts["XIST",] > 3) , "F", "M") #t() transpose into a vector of rows, rather than columns
+)
+
+targets$Sample = pheno
+#Rename samples
+colnames(normalisedcounts)[1:289] = pheno
+
+targets$Original_Class = targets$Fusion
+targets$Original_Class = ifelse(targets$Fusion == "Other",tmp[,1],as.character(targets$Fusion))
+head(targets)
+ntargets=targets
+
+```
+
+Gather the Lund data
+
+```{r}
+#Now read in Lund data 
+lcounts= read.table(file="EGAD00001002112/counts.txt",sep="\t",stringsAsFactors=FALSE,row.names=1,header=TRUE)
+
+
+colnames(lcounts) = gsub('.*_EGAR.*_C','C',colnames(lcounts))
+colnames(lcounts) = gsub('.Aligned.out.bam','',colnames(lcounts))
+colnames(lcounts) = gsub('_0*','_',colnames(lcounts))
+
+llength = data.frame(Length = lcounts[,'Length'])
+
+#Make DGE list
+y.keep <- DGEList(counts=lcounts[,6:200])
+
+
+#Remove XIST to avoid gender differences
+#remove <- row.names(y.keep) == "XIST"
+#y.keep = y.keep[!remove,]
+
+y.keep = calcNormFactors(y.keep) #Normalise the raw counts
+
+#Extract gene lengths
+FPKM <- rpkm(y.keep,normalized.lib.sizes=TRUE,log=TRUE,prior.count=0.25,gene.length = lcounts$Length)
+#FPKM <- rpkm(y.keep,log=TRUE,gene.length = lcounts$Length)
+FPKM <- data.frame(FPKM)
+FPKM$Gene_Symbol = row.names(FPKM)
+head(FPKM)
+
+
+#Lund sample data
+lsamp= read.csv(file="Supplementary_Lund/ncomms11790-s4.csv",stringsAsFactors=FALSE,row.names=1,skip=1)
+
+#Include HyperDiploidy as fourth category
+#ltargets = data.frame(Fusion = ifelse(grepl("BCR-ABL1", lsamp[,2]) | grepl("Ph-like", lsamp[,2]), "Phlike", 
+#                                   ifelse(grepl("DUX4", lsamp[,2]),"ERG", ifelse(grepl("hyperdiploidy", lsamp[,2]), "HyperDiploidy",
+#                                          ifelse(grepl("ETV", lsamp[,2]),"ETV","Other")))))
+
+
+#Remove hyperdiploidy from categories
+ltargets = data.frame(Fusion = ifelse(grepl("BCR-ABL1", lsamp[,2]) | grepl("Ph-like", lsamp[,2]), "Phlike", 
+                                   ifelse(grepl("DUX4", lsamp[,2]),"ERG", 
+                                          ifelse(grepl("ETV", lsamp[,2]),"ETV","Other"))))
+
+ltargets$Sample = paste0("Case_",row.names(lsamp))
+
+ltargets$Original_Class = ifelse(ltargets$Fusion == "Other",lsamp[,2],as.character(ltargets$Fusion))
+
+#Now re-order the targets to match the FPKM/y.keep
+m <- match(colnames(y.keep$counts),ltargets$Sample)
+m <- m[!is.na(m)]
+ltargets <- ltargets[m,] #Reorder
+
+head(ltargets)
+
+```
+
+Now we wish to combine both datasets together only including samples from the class we wish to classify.
+
+```{r}
+
+#Lets use dplyr to merge the data based on the shared gene symbols
+all = inner_join(normalisedcounts,FPKM,by="Gene_Symbol")
+row.names(all) <- all$Gene_Symbol
+alls = all[,c(1:289,296:490)]
+
+#Combine sample fusion info
+all_samp = rbind(targets[,c(1,3,4)],ltargets)
+
+```
+
+
+#Visualise
+
+In order to visualise the two datasets together and to understand how significant the batch effects are we want to produce PCA plots and colour them variously.
+
+```{r}
+#Define a new colour palette with enough colours for the nine different categories
+pal = brewer.pal(9,"Set1")
+#Define marker set as a vector
+pchvec <- c(1:5)
+
+pdf('Baller_Figs/Base_MDS.pdf')
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+plotMDS(alls,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
+legend('center',legend=unique(levels(all_samp$Fusion)),fill=pal,cex=0.8)
+legend('top',legend=c("St.Judes","Lund"),pch=pchvec)
+dev.off()
+
+
+plotMDS(alls,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
+legend('center',legend=unique(levels(all_samp$Fusion)),fill=pal,cex=0.8)
+legend('top',legend=c("St.Judes","Lund"),pch=pchvec)
+
+
+```
+
+Colour by batch
+```{r}
+pal = brewer.pal(9,"Set1")
+#Define marker set as a vector
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+
+#First 2 dimensions, colour by fusion
+plotMDS(alls,top=1000,gene.selection="common",cex=0.8,col=pal[batch],pch=pchvec[batch])
+```
+
+Now, we clearly have some batch effects in our data.... But can we try to remove the affects by using RUVseq
+
+```{r}
+
+design <- model.matrix(~all_samp$Fusion)
+fit <- lmFit(alls,design)
+efit <- eBayes(fit[,-1],trend=TRUE,robust=TRUE) #Remove the intercept [,-1]
+ranked_p = rank(-efit$F.p.value)
+my_genes = row.names(efit)[ranked_p<=1000]
+differences <- makeGroups(all_samp$Fusion)
+
+#ruv <- RUVg(as.matrix(alls),cIdx=mygenes,k=1,isLog=TRUE)
+
+#Ruvs with all genes using replicates
+ruv <- RUVs(as.matrix(alls),cIdx=row.names(efit),k=2,differences,isLog=TRUE)
+```
+
+
+Now lets see how big the batch effects are:
+```{r}
+res2= ruv$normalizedCounts#Remove batch
+#res2=alls #Keep in batch effects
+
+pal = brewer.pal(9,"Set1")
+#Define marker set as a vector
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+
+#First 2 dimensions, colour by fusion
+plotMDS(res2,top=1000,gene.selection="common",cex=0.8,col=pal[batch],pch=pchvec[batch])
+legend('bottomleft',legend=c("St.Judes","Lund"),fill=pal,pch=pchvec)
+```
+
+So in the above plot, we can see that we have removed hopefully alot of the batch effects without removing too much of the biology....
+
+Looking at just the biological variation:
+
+```{r}
+#Define a new colour palette with enough colours for the nine different categories
+pal = brewer.pal(9,"Set1")
+#Define marker set as a vector
+
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+plotMDS(res2,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
+legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=pchvec,cex=0.8)
+legend('topleft',legend=c("St.Judes","Lund"),pch=pchvec)
+
+pdf('Baller_Figs/Corrected_MDS.pdf')
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+plotMDS(res2,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
+legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=pchvec,cex=0.8)
+legend('topleft',legend=c("St.Judes","Lund"),pch=pchvec)
+dev.off()
+
+```
+
+Lets also have a look at the sub-classes of Other to see if there is some clustering there:
+
+```{r}
+n <- 20
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+color = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+ggplotColors <- function(g){
+  d <- 360/g
+  h <- cumsum(c(15, rep(d,g - 1)))
+  hcl(h = h, c = 100, l = 65)
+}
+
+color = ggplotColors(16)
+
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+
+plotMDS(res2,gene.selection="common",cex=0.8,col=color[factor(all_samp$Original_Class)],pch=pchvec[batch])
+legend('bottomright',legend=unique(levels(factor(all_samp$Original_Class))),fill=color,pch=16,cex=0.5,ncol=2)
+legend('topleft',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.5)
+
+```
+
+
+So we can remove the batch effects if we wish too, however in order to have a more robust classifier we can keep them in! Now lets train on all the genes!!
+
+```{r}
+
+bnorm = res2
+#######################################################
+#Find the 1000 most variable genes in the entire dataset
+#######################################################
+
+#Probably a bad strategy since the highest variance is associated with batch......
+#vars <-apply(bnorm,1,sd)
+#sort
+#vars <- sort(vars,decreasing=TRUE)
+
+#Now just select the 5000 most variable genes, based on the names of the genes
+#datExpr <- bnorm[names(vars[1:10000]),]
+
+##########################################################
+# Find genes which are the most variable in each set
+# since the largest variation in each set is biology
+# Use the overlap of the too
+##########################################################
+#High variable lund
+var_lund <-apply(lcounts[6:200],1,sd)
+#sort
+var_lund <- sort(var_lund,decreasing=TRUE)
+
+#Highly variable St.Judes
+var_jude <-apply(ncounts,1,sd)
+#sort
+var_jude <- sort(var_jude,decreasing=TRUE)
+
+comb_var = intersect(names(var_lund)[1:2000],names(var_jude)[1:2000])
+
+#Now just select the 5000 most variable genes, based on the names of the genes
+datExpr <- bnorm[comb_var,]
+
+#Only the non "Other" samples
+#cands <- all_samp[all_samp$Fusion != "Other",]
+
+#Remove the High Hyperdiploidy samples which are possibly confounded
+#cands <- all_samp[all_samp$Original_Class != "High hyperdiploidy",]
+
+
+
+#Include the others too!
+cands <- all_samp
+
+datExpr2 <- datExpr[,cands$Sample]
+
+```
+
+Now divvy up the entire dataset into training data (80% of samples) and test data (20 % of samples) in order to construct and test our random forest classifier.
+
+```{r}
+#Now subset entire dataset into training and test datasets
+#sample some random rows
+resp <- cands$Fusion
+resp <- as.data.frame(resp)
+resp$resp <- factor(resp$resp)
+
+#Transpose datExpr to be in sample by gene
+datExpr3 <- t(datExpr2)
+
+
+nTest = ceiling(nrow(datExpr3) * 0.2) #Take 80% of the rows randomly from the dataset for testing
+set.seed(1) #Set a seed for reproducibility
+ind = sample(nrow(datExpr3),nTest,FALSE) #Sample a random set of indices comprising 20%
+
+df.train = datExpr3[-ind,] #Take last 80% for training
+df.test = datExpr3[ind,] #Using residuals
+#df.test = d3[ind,] #Take first 20% for testing, using FPKM not batch normalised
+
+classtrain = resp[-ind,]
+classtest = resp[ind,]
+```
+
+Use cross validation to decided on what  (hyper) parameters to use for mtry (the number of variables to subset on for each node) and ntree (the number of trees to use when construct the random forest). A 5 fold cross validation is used.
+
+```{r}
+#Now cross-validate RF to do feature selection and find mtry,ntree e.t.c
+result <- rfcv(data.frame(df.train), classtrain, cv.fold=5)
+with(result, plot(n.var, error.cv, log="x", type="o", lwd=2))
+```
+
+This demonstrates that checking roughly 50 genes gives a decent error. Now we can tune.
+
+```{r}
+#Now tuneRF to find mtry and ntree
+tuneRF(data.frame(df.train),classtrain,mtryStart=50,stepFactor=0.5)
+```
+
+Looks like 80 is actually a pretty good value. So lets build a random forest from all most variable genes in the datasets with the parameters we have cross validated.
+
+```{r}
+#Now train the random forest
+set.seed(1) #Set the seed in order to gain reproducibility
+#Random forest only accepts a data.frame, not a matrix, hence conver
+RF1 = randomForest(classtrain~., data=data.frame(df.train),importance=T,mtry=100,proximity=TRUE)
+RF1
+```
+
+#Variable Importance
+
+Now we can extract the most important variables used in the random forest classification.
+
+```{r}
+#Extract variable importance
+var.imp = data.frame(importance(RF1))
+#Looking into the importance of different variables
+varImpPlot(RF1)
+
+pdf("Baller_Figs/varImp.pdf")
+varImpPlot(RF1,main="Variables of importamce",n.var=20)
+dev.off()
+```
+
+```{r}
+#Extract Gini Importance
+var.imp = data.frame(importance(RF1))
+RFImportanceGini=var.imp$MeanDecreaseGini
+
+#Looking at top Genes
+set.seed(1)
+NumberImportantGenes=c(1:100)
+OOBerror=rep(NA, length(NumberImportantGenes) )
+for (i in c(1:length(NumberImportantGenes)) ) {
+topGenes= rank(-RFImportanceGini, ties.method="first" ) <= i
+#Since the variables are highly correlated, we choose a small value for mtry (mtry=1).
+
+
+RF2 <- randomForest(classtrain~., data=data.frame(df.train[,topGenes]), ntree=201,
+                    importance=F, mtry=1)
+OOBerror[i]=1-sum(diag(table(RF2$predicted,classtrain)))/length(classtrain)
+}
+plot(NumberImportantGenes,OOBerror ,cex=1.5,xlab="Number of Top Most
+   Important Genes", ylab="RF Error Rate",cex.lab=1.5 )
+```
+
+Furthermore we can see the clustering of the various groups using the proximity matrix of the random forest to see how well the groups seperate.
+
+```{r}
+#View MDS
+MDSplot(RF1, classtrain,palette=pal)
+legend("bottomleft",legend=unique(levels(classtrain)),fill=pal,cex=0.7)
+```
+
+
+#Building a random forest from the top genes
+
+So as we can see almost all of the dataset is described by fourty-two genes, so in order to have a more general model we can simply build a random forest on the those fourty two genes:
+
+```{r}
+
+#Get and save top gene names
+mDGini = var.imp[,"MeanDecreaseGini",drop=FALSE]
+topGeneNames = mDGini[order(-mDGini$MeanDecreaseGini),,drop=FALSE]
+#Just take top 20
+topGeneNames = topGeneNames[1:20,,drop=FALSE]
+topgenes = row.names(topGeneNames)
+topgenes=gsub("\\.","-",topgenes) #Weird bug which switches a dot with a dash when using RF???
+```
+
+```{r}
+
+
+#Cross validating the number of features to use
+rfcv(df.train[,topgenes],classtrain,cv.fold=5,step=0.5)
+#Tune for mtry
+tuneRF(df.train[,topgenes],classtrain,stepFactor = 0.5,ntreeTry=401,mtryStart=5)
+```
+
+```{r}
+set.seed(1)
+RF2 <-randomForest(classtrain~., data=data.frame(df.train[,topgenes]), importance=T, mtry=5, proximity=T)
+RF2
+
+#Save the RF object and topgenes
+save(RF2,file="RF_model.Rda")
+save(topgenes,file="topGeneNames.Rda")
+```
+
+Now lets explore our random forest to see if it is doing what we think and want, so lets again consider the MDs plot made from the proximity matrix, but also just look at a heatmap based on a hierachical clustering of the top 20 genes used in our random forest as a cross-check:
+
+```{r}
+topdata = res2[topgenes,]
+yx <- as.matrix(topdata)
+
+heatmap.2(yx,colCol=pal[all_samp$Fusion],trace = "none",col =brewer.pal(11,"Spectral"))
+
+pdf("Baller_Figs/Heat_check.pdf")
+heatmap.2(yx,colCol=pal[all_samp$Fusion],trace = "none",col =brewer.pal(11,"Spectral"))
+dev.off()
+
+#Check how the MDS plot looks like with just these top genes
+pal = brewer.pal(9,"Set1")
+#Define marker set as a vector
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+
+plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
+legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=16)
+legend('bottomleft',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.5)
+
+pdf("Baller_Figs/MDS_check.pdf")
+pal = brewer.pal(9,"Set1")
+#Define marker set as a vector
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+
+plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
+legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=16)
+legend('bottomleft',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.9)
+dev.off()
+
+```
+
+#Subclasses of other
+
+But the question is, do the subclasses of other classify?
+
+```{r}
+#Check how the MDS plot looks like with just these top genes
+#color = grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
+
+color = ggplotColors(16)
+
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+
+plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=color[factor(all_samp$Original_Class)],pch=pchvec[batch])
+legend('bottomleft',legend=unique(levels(factor(all_samp$Original_Class))),fill=color,pch=16,cex=0.5,ncol=2)
+legend('bottomright',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.5)
+
+pdf('Baller_Figs/Sub_Other.pdf')
+plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=color[factor(all_samp$Original_Class)],pch=pchvec[batch])
+legend('bottomleft',legend=unique(levels(factor(all_samp$Original_Class))),fill=color,pch=16,cex=0.8,ncol=2)
+legend('bottomright',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.8)
+dev.off()
+
+```
+
+
+#Check for batch effects in top genes
+
+Nowe we also just want to check whether the topgenes are biased to batches
+```{r}
+#Check how the MDS plot looks like with just these top genes
+pal = brewer.pal(9,"Set1")
+
+pchvec <- c(1:2)
+batch <- c(rep(1,289),rep(2,195))
+
+plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=pal[batch],pch=pchvec[batch])
+legend('topright',legend=c("St.Judes","Lund"),fill=pal,pch=pchvec)
+```
+#Time to Test
+Now we wish to understand how well the randomForest does on predicting on the test dataset.
+```{r}
+RF2pred <- predict(RF2,data.frame(df.test))
+RF2prob <-predict(RF2,data.frame(df.test),type="prob")
+```
+
+So as you can see the randomForest is doing a reasonable job and does what we think! Lets visualise in a confusion matrix:
+
+```{r}
+library(ggplot2)
+
+#First make matrix
+conf = RF2$confusion[,c(1:4)]
+
+#Now lets normalise
+conf.norm = apply(conf,2, function(x) x/sum(x))
+
+#Rejig matrix to table then to dataframe
+confusion = as.data.frame(as.table(conf.norm))
+values = c(0.05,1.0)
+gg <- ggplot(confusion,aes(x=Var1,y=Var2,fill=Freq))
+gg + geom_tile() + labs(fill="Normalised\nFrequency",x="Truth",y="Predicted") + scale_fill_gradientn(colors = terrain.colors(8),values=values)
+```
+```{r}
+out = data.frame(RF2prob)
+out = cbind(out,RF2pred)
+out$True = classtest
+Maj = apply(RF2prob[,1:4],1,max)
+out$Maj = Maj 
+head(out)
+```
+
+
+```{r}
+
+#First make matrix
+conf = table(out[,c(5,6)])
+print(conf)
+
+#Now lets normalise
+conf.norm = apply(conf,2, function(x) x/sum(x))
+values = c(0.05,1.0)
+
+#Rejig matrix to table then to dataframe
+confusion = as.data.frame(as.table(conf.norm))
+gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))
+gg + geom_tile() + labs(fill="Normalised\nFrequency") + scale_fill_gradientn(colors = terrain.colors(8),values=values)
+
+pdf('Baller_Figs/Test_success.pdf')
+gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))
+gg + geom_tile() + labs(fill="Normalised\nFrequency",x="Predicted") + scale_fill_gradientn(colors = terrain.colors(8),values=values)
+dev.off()
+```
+
+
+#Choosing a Threshold
+
+So now the question we want to address is, what happens when we have a sample whom doesn't fit into one of the above four samples. Well, in that case we wish the sample to be called as "Unclassified". So at what probability threshold should we consider something as unclassified rather than one of the other classes?
+
+
+```{r}
+
+#Lets take the test set and the "Other" samples and see what goes down
+cands <- all_samp[all_samp$Fusion == "Other",]
+autre <- datExpr[topgenes,cands$Sample]
+
+#If we excluded the Others add them in 
+#combo = rbind(df.test[,topgenes],t(autre)) 
+
+#Otherwise
+combo = df.test[,topgenes]
+
+
+RF2pred_autre <- predict(RF2,data.frame(combo))
+RF2prob_autre <-predict(RF2,data.frame(combo),type="prob")
+
+autre_out = data.frame(RF2prob_autre)
+autre_out = cbind(autre_out,RF2pred_autre)
+
+#If excluded Others add them in
+#autre_out$True = c(as.character(classtest),as.character(cands$Fusion))
+#otherwise
+autre_out$True = c(as.character(classtest))
+
+Maj = apply(RF2prob_autre[,1:4],1,max)
+autre_out$Prob = Maj 
+```
+
+How about class specific thresholds?
+
+```{r}
+
+#Find MLL samples as litmus tests
+mlls= row.names(lsamp[lsamp$Genetic.subtype.after.RNA.seq == "MLL",])
+
+gg <- ggplot(autre_out)
+
+#ETV
+gg + geom_density(aes(ETV),col="red") + 
+geom_vline(xintercept=autre_out["Case_22","ETV"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_58","ETV"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_170","ETV"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_152","ETV"],col="purple",linetype=2) +
+geom_vline(xintercept=autre_out[autre_out$True=="ETV","ETV"],col="yellow")    
+
+#ERG
+gg + geom_density(aes(ERG),col="blue") + geom_vline(xintercept=autre_out["Case_10","ERG"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_170","ERG"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_163","ERG"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_152","ERG"],col="purple",linetype=2) + geom_vline(xintercept=autre_out[autre_out$True=="ERG","ERG"],col="yellow")  
+
+#Phlike
+gg + geom_density(aes(Phlike),col="green") + geom_vline(xintercept=autre_out["Case_10","Phlike"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_170","Phlike"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_163","Phlike"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Case_152","Phlike"],col="purple",linetype=2) + 
+geom_vline(xintercept=autre_out[autre_out$True=="Phlike","Phlike"],col="yellow")    
+
+#Hyperdiploidy
+#hyper= row.names(lsamp[lsamp$Genetic.subtype.after.RNA.seq == "HyperDiplody",])
+#hyp = gg + geom_density(aes(HyperDiploidy),col="black") + geom_vline(xintercept=autre_out["Sample_10","HyperDiploidy"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Sample_170","HyperDiploidy"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Sample_163","HyperDiploidy"],col="purple",linetype=2) + geom_vline(xintercept=autre_out["Sample_152","HyperDiploidy"],col="purple",linetype=2) +
+#geom_vline(xintercept=autre_out["Sample_23","HyperDiploidy"],col="yellow",linetype=1) +
+#geom_vline(xintercept=autre_out[autre_out$True=="HyperDiploidy","HyperDiploidy"],col="yellow")
+#hyp
+
+#Other
+hyper= row.names(lsamp[lsamp$Genetic.subtype.after.RNA.seq == "Other",])
+hyp = gg + geom_density(aes(Other),col="black") +  
+geom_vline(xintercept=autre_out[autre_out$True=="Other","Other"],col="yellow") + geom_vline(xintercept=autre_out["Case_163","Other"],col="purple",linetype=2)
+hyp
+
+```
+
+
+# The Threshold Landscape
+
+```{r}
+library(tidyr)
+
+prob_plot = function(class_name,df){
+    dat = df[df$True==class_name,]
+    dat = dat[order(-dat[,class_name]),]
+    dat$Sample = row.names(dat)
+    dat= dat %>% gather(class,prob,ERG:Phlike)
+    
+    my.order = unique(dat$Sample)
+    dat$Sample <- factor(dat$Sample, levels = my.order)
+    
+    #classes = unique(dat$class)
+    #dat$class <- factor(dat$class,levels=c(class_name,classes[classes!=class_name]))
+    
+    gg <- ggplot(dat)
+    gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity') + theme(text = element_text(size=10),
+        axis.text.x = element_text(angle=90, hjust=1,size=6))
+}
+
+# ERG postive
+#ERG = autre_out[autre_out$True=='ERG',]
+#ERG = ERG[order(-ERG$ERG),]
+#ERG$Sample = row.names(ERG)
+#ERG = ERG %>% gather(class,prob,ERG:Phlike)
+
+#my.order = unique(ERG$Sample)
+#ERG$Sample <- factor(ERG$Sample, levels = my.order)
+
+#gg <- ggplot(ERG)
+#gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity')
+
+prob_plot('Phlike',autre_out)
+prob_plot('ETV',autre_out)
+prob_plot('ERG',autre_out)
+prob_plot('Other',autre_out)
+
+pdf('Baller_Figs/PhThresh.pdf')
+prob_plot('Phlike',autre_out)
+dev.off()
+
+pdf('Baller_Figs/ERGThresh.pdf')
+prob_plot('ERG',autre_out)
+dev.off()
+
+pdf('Baller_Figs/ETVThresh.pdf')
+prob_plot('ETV',autre_out)
+dev.off()
+
+pdf('Baller_Figs/OtherThresh.pdf')
+prob_plot('Other',autre_out)
+dev.off()
+
+
+```
+
+
+#Testing on the MCRI dataset
+
+Now we wish to see how well wen can predict some of the MCRI samples.
+
+```{r,tidy=TRUE}
+#Read in files
+raw <- read.table("../ALL_analysis/PaulsData/Combined_Oct16.tsv",header=TRUE,sep='\t',row.names=1)
+counts <- raw[1:110]
+
+#Target info
+targets <- read.table("../ALL_analysis/PaulsData/targets_Oct16.tsv",header=TRUE,sep='\t')
+
+#Sample Info
+sample_type <- read.table("../ALL_analysis/Sample_type_only.csv",header=TRUE,sep=",")
+
+#Fix format of sample names
+sample_type$Sample = gsub("-",".",sample_type$Sample)
+sample_type$Sample = gsub("_",".",sample_type$Sample)
+sample_type$Sample = gsub(" (.*)","",sample_type$Sample)
+
+
+#Make a DGElist (an object necessary to produce an FPKM using edgeR)
+y <- DGEList(counts=counts, genes=rownames(counts))
+
+#Remove non-ALL samples
+ALL_sample = sample_type[!grepl("Exclude",sample_type$Type),]
+m <- match(ALL_sample$Sample,colnames(y))
+m <-m[!is.na(m)]
+y2 = y[,m]
+
+#Just get the B-Cell ALL
+ball = sample_type[!(sample_type$Type == "T-ALL" | sample_type$Type == "ETP-ALL"),]
+m <- match(ball$Sample,colnames(y2))
+m <-m[!is.na(m)]
+y3 = y2[,m]
+
+#### remove genes with very low counts (i.e only keep those rows[genes] with greater than 1 count per million in at least 2 samples)
+#keep <- rowSums(cpm(y)>=1) >= 2
+#y.keep <-y[keep,]
+
+#Remove XIST to avoid gender differences
+remove <- row.names(y3) == "XIST"
+y.keep = y3[!remove,]
+y.keep = calcNormFactors(y.keep) #Normalise the raw counts
+
+#Extract gene lengths
+glengths = raw[,"Length",drop=FALSE]
+
+#Convert to fpkm using edgeR function rpkm
+gg = glengths[row.names(y.keep$counts),"Length",drop=FALSE] #Select only the genelengths which are left after removing low counts
+mFPKM <- rpkm(y.keep,normalized.lib.sizes=TRUE,log=TRUE,prior.count=0.25,gene.length = gg$Length)
+```
+
+
+So we have read in the MCRI data lets classify it and see how we do:
+```{r}
+#Just take the top genes
+#sort(row.names(FPKM)) #Check names alphabetically
+
+toclass = mFPKM[topgenes,]
+
+#Now lets predict
+RF2pred <- predict(RF2,data.frame(t(toclass)))
+RF2prob <-predict(RF2,data.frame(t(toclass)),type="prob")
+```
+
+Check the outputs:
+```{r}
+
+#Reorder sample types file
+m <- match(colnames(y.keep$counts),sample_type$Sample)
+m <- m[!is.na(m)]
+sample_type <- sample_type[m,] #Reorder
+
+out = data.frame(RF2prob)
+out = cbind(out,RF2pred)
+Maj = apply(RF2prob[,1:4],1,max)
+out$Prob = Maj
+
+
+#Just keep the samples where we have clinical info about the fusion
+m <- match(sample_type$Sample,rownames(out))
+m <- m[!is.na(m)]
+out <- out[m,]
+
+out$Fusion = sample_type$Fusion
+out$Type = sample_type$Type
+out$Classified = ifelse(out$ERG > 0.25,"ERG",ifelse(out$ETV>0.5,"ETV",ifelse(out$Other > 0.75,"Other",ifelse(out$Phlike > 0.5,"Phlike","Unclassifed"))))
+
+Magic = out[c(1,18,26,29,50,48,54,59,45,44),c(7,8,9)]
+
+```
+
+Now lets look at the "Phlike" samples to see the confidence with which we classify them:
+
+```{r}
+#Select just the ABL1 samples
+able = out[grepl("ABL1",out$True),c(1,2,3,4,7,8)]
+able = able[order(-able[,"Phlike"]),]
+able$Sample = row.names(able)
+
+dat = able %>% gather(sample,prob,1:4)
+names(dat) = c('Fusion','Classified','Sample','Class_type','prob')    
+my.order = unique(dat$Sample)
+dat$Sample <- factor(dat$Sample, levels = my.order)
+    
+gg <- ggplot(dat)
+gg + geom_bar(aes(x=Sample,y=prob,fill=Class_type),stat='identity') + theme(text = element_text(size=10),axis.text.x = element_text(angle=90, hjust=1,size=6))
+
+pdf('ABL1_expo.pdf')
+gg + geom_bar(aes(x=Sample,y=prob,fill=Class_type),stat='identity') + theme(text = element_text(size=10),axis.text.x = element_text(angle=90, hjust=1,size=6))
+dev.off()
+
+```
+
+But how do they sit on the combined dataset?
+
+```{r}
+
+#combine training samples with MCRI samples
+combo = cbind(res2[topgenes,],mFPKM[topgenes,])
+markers = c(rep(1,484),rep(16,61))
+class = c(as.character(all_samp$Fusion),out$Classified)
+
+plotMDS(combo,gene.selection="common",col=pal[as.factor(class)],cex=0.8,pch=markers)
+legend('bottomright',legend=levels(as.factor(class)),fill=pal,pch=16)
+legend('bottomleft',legend=c('Training','MCRI'),pch=unique(markers),cex=0.9)
+
+pdf("MDS_combo_MCRI.pdf")
+plotMDS(combo,gene.selection="common",col=pal[as.factor(class)],cex=0.8,pch=markers)
+legend('bottomleft',legend=levels(as.factor(class)),fill=pal,pch=16)
+legend('topleft',legend=c('Training','MCRI'),pch=unique(markers),cex=0.9)
+dev.off()
+
+```
+
+What about the individual ones?
+
+```{r}
+
+#combine training samples with MCRI samples
+combo = cbind(FPKM[topgenes,1:195],mFPKM[topgenes,])
+markers = c(rep(1,195),rep(16,61))
+class = c(as.character(ltargets$Fusion),out$Classified)
+
+plotMDS(combo,gene.selection="common",col=pal[as.factor(class)],cex=0.8,pch=markers)
+legend('topleft',legend=levels(as.factor(class)),fill=pal,pch=16)
+legend('bottomleft',legend=c('Lund','MCRI'),pch=unique(markers),cex=0.9)
+```
+
+```{r}
+
+#combine training samples with MCRI samples
+combo = cbind(ncounts[topgenes,],mFPKM[topgenes,])
+markers = c(rep(1,289),rep(16,61))
+class = c(as.character(ntargets$Fusion),out$Classified)
+
+plotMDS(combo,gene.selection="common",col=pal[as.factor(class)],cex=0.8,pch=markers)
+legend('bottomright',legend=levels(as.factor(class)),fill=pal,pch=16)
+legend('bottomleft',legend=c('St.Judes','MCRI'),pch=unique(markers),cex=0.9)
+```

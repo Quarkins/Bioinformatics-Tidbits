@@ -12,3 +12,5 @@ A collection of scripts and files used whilst bioinformagicianing
 **Expression Outliers.R** - A quick script i made to explore Expression Outliers for various interesting genes in the ALL samples we though were more unusual from the MCRI cohort.
 
 **Express Yourself** - My first ever shiny app for looking into expression outliers as a web app instead of statically as in the above script.
+
+**Making_AllSorts.Rmd** - A script to make the AllSorts Classifier (really messy, not cleaned)
