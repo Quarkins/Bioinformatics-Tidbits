@@ -536,13 +536,13 @@ library(ggplot2)
 conf = RF2$confusion[,c(1:4)]
 
 #Now lets normalise
-conf.norm = apply(conf,2, function(x) x/sum(x))
+#conf.norm = apply(conf,2, function(x) x/sum(x))
 
 #Rejig matrix to table then to dataframe
-confusion = as.data.frame(as.table(conf.norm))
+confusion = as.data.frame(as.table(conf))
 values = c(0.05,1.0)
 gg <- ggplot(confusion,aes(x=Var1,y=Var2,fill=Freq))
-gg + geom_tile() + labs(fill="Normalised\nFrequency",x="Truth",y="Predicted") + scale_fill_gradientn(colors = terrain.colors(8),values=values)
+gg + geom_tile() + labs(fill="Frequency",x="Truth",y="Predicted") + geom_text(aes(label=Freq),show.legend = FALSE,colour="white")
 ```
 ```{r}
 out = data.frame(RF2prob)
@@ -560,18 +560,16 @@ head(out)
 conf = table(out[,c(5,6)])
 print(conf)
 
-#Now lets normalise
-conf.norm = apply(conf,2, function(x) x/sum(x))
-values = c(0.05,1.0)
+
 
 #Rejig matrix to table then to dataframe
-confusion = as.data.frame(as.table(conf.norm))
-gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))
-gg + geom_tile() + labs(fill="Normalised\nFrequency") + scale_fill_gradientn(colors = terrain.colors(8),values=values)
+confusion = as.data.frame(as.table(conf))
+gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))  
+gg + geom_tile() + labs(fill="Frequency") + geom_text(aes(label=Freq),show.legend = FALSE,colour="white")
 
 pdf('Baller_Figs/Test_success.pdf')
-gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))
-gg + geom_tile() + labs(fill="Normalised\nFrequency",x="Predicted") + scale_fill_gradientn(colors = terrain.colors(8),values=values)
+gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))  
+gg + geom_tile() + labs(fill="Frequency",x="Predicted") + geom_text(aes(label=Freq),show.legend = FALSE,colour="white")
 dev.off()
 ```
 
@@ -664,8 +662,7 @@ prob_plot = function(class_name,df){
     #dat$class <- factor(dat$class,levels=c(class_name,classes[classes!=class_name]))
     
     gg <- ggplot(dat)
-    gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity') + theme(text = element_text(size=10),
-        axis.text.x = element_text(angle=90, hjust=1,size=6))
+    gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity') + theme(axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.title.y=element_text(size=18),axis.title.x=element_text(size=18)) + labs(y="Probability") 
 }
 
 # ERG postive
