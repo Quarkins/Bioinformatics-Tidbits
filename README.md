@@ -14,3 +14,5 @@ A collection of scripts and files used whilst bioinformagicianing
 **Express Yourself** - My first ever shiny app for looking into expression outliers as a web app instead of statically as in the above script.
 
 **Making_AllSorts.Rmd** - A script to make the AllSorts Classifier (really messy, not cleaned)
+
+**Making_AllSorts.html** - A script to make the AllSorts Classifier (to view it, preview the html on: https://cdn.rawgit.com/Quarkins/Bioinformatics-Tidbits/master/Making_AllSorts.html 
