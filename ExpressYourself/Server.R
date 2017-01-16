@@ -1,30 +1,90 @@
 library(shiny)
-library(ggplot2)
+library(limma)
 
 
-#kinase <- readRDS('ShinyExpress/data/kinase.rds')
+#Load in the data
+MCRI_data <- readRDS("Data/MCRI.Rds")
+MCRI_target <- readRDS("Data/MCRI_target.Rds")
 
-function(input, output) {
-  
-  dataset <- reactive({
+shinyServer(function(input, output, session) {
     
-   m < match(tt$Gene,input$gene)
-   tt[m,]
-    #if(input$x != '')
-    #  tt[tt$Gene==input$x,]
-  })
-  
-  output$plot <- renderPlot({
+    dd <- reactive({
+        if(input$type != "All"){
+            selected = MCRI_target[MCRI_target$Cell_type == input$type,]
+            m <- match(selected$Sample,colnames(MCRI_data$E))
+            m <-m[!is.na(m)]
+            MCRI_data$E[,m,drop=FALSE]
+        }
+        else{
+            MCRI_data$E
+        }
+    })
     
-    p <- ggplot(dataset(),aes(factor(Gene),LogCounts,fill=factor(Gene))) #So here we colour and factor by gene (so one boxplot per gene)
-    p <- p + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +xlab("Gene") + ylab("LogCPM") #Make sure to label the plot
+    output$expression <- renderPlot({
+        
+        if(length(input$gene) < 1){}   
+        
+        else{
+            if(length(input$gene) >1) {
+                stripchart(dd()[input$gene,] ~ row.names(dd()[input$gene,]) ,ylab="Log CPM",
+                           pch=16,method="jitter",col="orange",vertical=TRUE)
+            }
+            else{
+                stripchart(dd()[input$gene,],xlab="Log CPM", ylab=input$gene,
+                           pch=16,method="jitter",col="orange")
+                
+            }
+            
+        }
+     
+    })
+    
+ 
+    output$boxplot <- renderPlot({
+        
+        
+        if(length(input$gene) < 1){}
+        else if(length(input$gene) == 1){
+            sub = t(dd()[input$gene,,drop=FALSE])
+            bp = boxplot(sub,ylab="Log CPM",xlab=input$gene,pch=16,outcol='red',col=rgb(226/255,9/255,172/255,0.2),border="#e209ac")
+            bp 
+            if(length(bp$out) > 0){
+                text(rep(1,length(bp$out)),bp$out,
+                     rownames(sub)[match(bp$out,sub)])
+            }
+        }
+        else{
+            sub = t(dd()[input$gene,])
+            bp = boxplot(sub,ylab="Log CPM",xlab="Gene(s)",pch=16,outcol='red',col=rgb(226/255,9/255,172/255,0.4),border="#e209ac")
+            bp
+        }
+    })
+    
+    output$density <- renderPlot({
+        sub = dd()[input$dense_gene,,drop=FALSE]
+        d<- density(as.numeric(sub[input$dense_gene,]))
+        bp<-plot(d,xlab="logFPKM",main = input$dense_gene,col="#4286f4",lwd=2)
+        bp 
+    })
+    
+    output$outliers <- renderTable({
+        #Get outliers
+        sub = t(dd()[input$dense_gene,,drop=FALSE])
+        bp = boxplot(sub,plot=FALSE)
+        tab = data.frame(outlier_sample = rownames(sub)[match(bp$out,sub)], logFPKM = bp$out)
+        tab
+    })
     
     
-    if (input$jitter)
-      p <- p + geom_jitter(size=1,aes(color=factor(Gene),alpha=0.5,text=Sample))
+    updateSelectizeInput(session,"gene",
+                         choices=row.names(MCRI_data$E),server=TRUE)
     
-    print(p)
+    updateSelectizeInput(session,"type",
+                         choices=c("Non T-ALL","T-ALL","Excluded (Mostly AML)","All"),
+                         server=TRUE,selected='All')
     
-  }, height=700)
-  
-}
+    updateSelectizeInput(session,"dense_gene",
+                         choices=row.names(MCRI_data$E),
+                         server=TRUE,selected='AHR')
+    
+})
