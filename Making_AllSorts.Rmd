@@ -1,6 +1,8 @@
 ---
-title: "Making AllSorts v4"
-output: html_notebook
+title: "Making AllSorts"
+output:
+  html_document: default
+  html_notebook: default
 ---
 ---
 title: "AllSorts: The combined B-ALL classifer using the St.Judes and Swedish Dataset"
@@ -21,7 +23,7 @@ We have the RAW RNA-seq data for 195 patients taken at Lund University. The samp
 #Collating and Munging
 Firstly, we need to read in our data, do some munging and sculpt it into a useable form.
 
-```{r}
+```{r,message=FALSE}
 library(edgeR)
 library(limma)
 library(gplots)
@@ -32,7 +34,7 @@ library(biomaRt)
 library(dplyr)
 library(RUVSeq)
 
-normalisedcounts= read.csv(file="ALL_FPKM_filtered_genes_log2signal_annot.txt",sep="\t",stringsAsFactors=FALSE,row.names=1)
+normalisedcounts= read.csv(file="../../MCRI/BALL/ALL_FPKM_filtered_genes_log2signal_annot.txt",sep="\t",stringsAsFactors=FALSE,row.names=1)
 
 #Just take the sample columns, leave out the other annotational columns
 ncounts = normalisedcounts[,1:289]
@@ -66,7 +68,7 @@ colnames(normalisedcounts)[1:289] = pheno
 
 targets$Original_Class = targets$Fusion
 targets$Original_Class = ifelse(targets$Fusion == "Other",tmp[,1],as.character(targets$Fusion))
-head(targets)
+#head(targets)
 ntargets=targets
 
 ```
@@ -75,7 +77,7 @@ Gather the Lund data
 
 ```{r}
 #Now read in Lund data 
-lcounts= read.table(file="EGAD00001002112/counts.txt",sep="\t",stringsAsFactors=FALSE,row.names=1,header=TRUE)
+lcounts= read.table(file="../../MCRI/BALL/EGAD00001002112/counts.txt",sep="\t",stringsAsFactors=FALSE,row.names=1,header=TRUE)
 
 
 colnames(lcounts) = gsub('.*_EGAR.*_C','C',colnames(lcounts))
@@ -99,11 +101,11 @@ FPKM <- rpkm(y.keep,normalized.lib.sizes=TRUE,log=TRUE,prior.count=0.25,gene.len
 #FPKM <- rpkm(y.keep,log=TRUE,gene.length = lcounts$Length)
 FPKM <- data.frame(FPKM)
 FPKM$Gene_Symbol = row.names(FPKM)
-head(FPKM)
+#head(FPKM)
 
 
 #Lund sample data
-lsamp= read.csv(file="Supplementary_Lund/ncomms11790-s4.csv",stringsAsFactors=FALSE,row.names=1,skip=1)
+lsamp= read.csv(file="../../MCRI/BALL/Supplementary_Lund/ncomms11790-s4.csv",stringsAsFactors=FALSE,row.names=1,skip=1)
 
 #Include HyperDiploidy as fourth category
 #ltargets = data.frame(Fusion = ifelse(grepl("BCR-ABL1", lsamp[,2]) | grepl("Ph-like", lsamp[,2]), "Phlike", 
@@ -125,7 +127,7 @@ m <- match(colnames(y.keep$counts),ltargets$Sample)
 m <- m[!is.na(m)]
 ltargets <- ltargets[m,] #Reorder
 
-head(ltargets)
+#head(ltargets)
 
 ```
 
@@ -153,15 +155,7 @@ In order to visualise the two datasets together and to understand how significan
 pal = brewer.pal(9,"Set1")
 #Define marker set as a vector
 pchvec <- c(1:5)
-
-pdf('AllSorts_Figs/Base_MDS.pdf')
-pchvec <- c(1:2)
 batch <- c(rep(1,289),rep(2,195))
-plotMDS(alls,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
-legend('center',legend=unique(levels(all_samp$Fusion)),fill=pal,cex=0.8)
-legend('top',legend=c("St.Judes","Lund"),pch=pchvec)
-dev.off()
-
 
 plotMDS(alls,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
 legend('center',legend=unique(levels(all_samp$Fusion)),fill=pal,cex=0.8)
@@ -228,14 +222,6 @@ batch <- c(rep(1,289),rep(2,195))
 plotMDS(res2,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
 legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=pchvec,cex=0.8)
 legend('topleft',legend=c("St.Judes","Lund"),pch=pchvec)
-
-pdf('AllSorts_Figs/Corrected_MDS.pdf')
-pchvec <- c(1:2)
-batch <- c(rep(1,289),rep(2,195))
-plotMDS(res2,top=1000,gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
-legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=pchvec,cex=0.8)
-legend('topleft',legend=c("St.Judes","Lund"),pch=pchvec)
-dev.off()
 
 ```
 
@@ -376,9 +362,6 @@ var.imp = data.frame(importance(RF1))
 #Looking into the importance of different variables
 varImpPlot(RF1)
 
-pdf("AllSorts_Figs/varImp.pdf")
-varImpPlot(RF1,main="Variables of importamce",n.var=20)
-dev.off()
 ```
 
 ```{r}
@@ -454,9 +437,6 @@ yx <- as.matrix(topdata)
 
 heatmap.2(yx,colCol=pal[all_samp$Fusion],trace = "none",col =brewer.pal(11,"Spectral"))
 
-pdf("AllSorts_Figs/Heat_check.pdf")
-heatmap.2(yx,colCol=pal[all_samp$Fusion],trace = "none",col =brewer.pal(11,"Spectral"))
-dev.off()
 
 #Check how the MDS plot looks like with just these top genes
 pal = brewer.pal(9,"Set1")
@@ -467,17 +447,6 @@ batch <- c(rep(1,289),rep(2,195))
 plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
 legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=16)
 legend('bottomleft',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.5)
-
-pdf("AllSorts_Figs/MDS_check.pdf")
-pal = brewer.pal(9,"Set1")
-#Define marker set as a vector
-pchvec <- c(1:2)
-batch <- c(rep(1,289),rep(2,195))
-
-plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=pal[all_samp$Fusion],pch=pchvec[batch])
-legend('bottomright',legend=unique(levels(all_samp$Fusion)),fill=pal,pch=16)
-legend('bottomleft',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.9)
-dev.off()
 
 ```
 
@@ -498,11 +467,6 @@ plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=color[factor(all_sam
 legend('bottomleft',legend=unique(levels(factor(all_samp$Original_Class))),fill=color,pch=16,cex=0.5,ncol=2)
 legend('bottomright',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.5)
 
-pdf('AllSorts_Figs/Sub_Other.pdf')
-plotMDS(res2[topgenes,],gene.selection="common",cex=0.8,col=color[factor(all_samp$Original_Class)],pch=pchvec[batch])
-legend('bottomleft',legend=unique(levels(factor(all_samp$Original_Class))),fill=color,pch=16,cex=0.8,ncol=2)
-legend('bottomright',legend=c('St.Judes','Lund'),pch=unique(pchvec),cex=0.8)
-dev.off()
 
 ```
 
@@ -567,10 +531,6 @@ confusion = as.data.frame(as.table(conf))
 gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))  
 gg + geom_tile() + labs(fill="Frequency") + geom_text(aes(label=Freq),show.legend = FALSE,colour="white")
 
-pdf('AllSorts_Figs/Test_success.pdf')
-gg <- ggplot(confusion,aes(x=RF2pred,y=True,fill=Freq))  
-gg + geom_tile() + labs(fill="Frequency",x="Predicted") + geom_text(aes(label=Freq),show.legend = FALSE,colour="white")
-dev.off()
 ```
 
 
@@ -661,42 +621,39 @@ prob_plot = function(class_name,df){
     #classes = unique(dat$class)
     #dat$class <- factor(dat$class,levels=c(class_name,classes[classes!=class_name]))
     
+    lab_cols = ifelse(dat$batch == "Lund","#f9b52c","#2cabf9")
+    
+    
     gg <- ggplot(dat)
-    gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity') + theme(axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.title.y=element_text(size=18),axis.title.x=element_text(size=18)) + labs(y="Probability") 
+    gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity') + theme_bw() +  theme(axis.text.x=element_blank(),axis.ticks.x=element_line(color=lab_cols,size=5),axis.title.y=element_text(size=18),axis.title.x=element_text(size=18), title=element_text(size=18), legend.position="none") + labs(y="Probability", title=paste0("Truth Class ",class_name)) 
 }
 
-# ERG postive
-#ERG = autre_out[autre_out$True=='ERG',]
-#ERG = ERG[order(-ERG$ERG),]
-#ERG$Sample = row.names(ERG)
-#ERG = ERG %>% gather(class,prob,ERG:Phlike)
+prob_plot = function(class_name,df){
+    dat = df[df$True==class_name,]
+    dat = dat[order(-dat[,class_name]),]
+    dat$Sample = row.names(dat)
+    dat= dat %>% gather(class,prob,ERG:Phlike)
+    
+    my.order = unique(dat$Sample)
+    dat$Sample <- factor(dat$Sample, levels = my.order)
+    
+    #classes = unique(dat$class)
+    #dat$class <- factor(dat$class,levels=c(class_name,classes[classes!=class_name]))
+    
+    lab_cols = ifelse(dat$batch == "Lund","#f9b52c","#2cabf9")
+    
+    
+    gg <- ggplot(dat)
+    gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity') + theme_bw() +  theme(axis.text.x=element_blank(),axis.ticks.x=element_line(color=lab_cols,size=5),axis.title.y=element_text(size=18),axis.title.x=element_text(size=18), title=element_text(size=18), legend.position="none") + labs(y="Probability", title=paste0("Truth Class ",class_name)) 
+}
 
-#my.order = unique(ERG$Sample)
-#ERG$Sample <- factor(ERG$Sample, levels = my.order)
 
-#gg <- ggplot(ERG)
-#gg + geom_bar(aes(x=Sample,y=prob,fill=class),stat='identity')
+#Add a variable to discriminate whether batch is from Lund or St.Judes
+autre_out$batch = ifelse(grepl("Case",row.names(autre_out)),"Lund","St.Judes")
 
 prob_plot('Phlike',autre_out)
 prob_plot('ETV',autre_out)
 prob_plot('ERG',autre_out)
 prob_plot('Other',autre_out)
-
-pdf('AllSorts_Figs/PhThresh.pdf')
-prob_plot('Phlike',autre_out)
-dev.off()
-
-pdf('AllSorts_Figs/ERGThresh.pdf')
-prob_plot('ERG',autre_out)
-dev.off()
-
-pdf('AllSorts_Figs/ETVThresh.pdf')
-prob_plot('ETV',autre_out)
-dev.off()
-
-pdf('AllSorts_Figs/OtherThresh.pdf')
-prob_plot('Other',autre_out)
-dev.off()
-
 
 ```
