@@ -23,7 +23,7 @@ We have the RAW RNA-seq data for 195 patients taken at Lund University. The samp
 #Collating and Munging
 Firstly, we need to read in our data, do some munging and sculpt it into a useable form.
 
-```{r,message=FALSE}
+```{r,warning=FALSE}
 library(edgeR)
 library(limma)
 library(gplots)
