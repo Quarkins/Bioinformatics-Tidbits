@@ -15,4 +15,4 @@ A collection of scripts and files used whilst bioinformagicianing
 
 **Making_AllSorts.Rmd** - A script to make the AllSorts Classifier (really messy, not cleaned)
 
-**Making_AllSorts.html** - A script to make the AllSorts Classifier (to view it, preview the html on: https://cdn.rawgit.com/Quarkins/Bioinformatics-Tidbits/master/Making_AllSorts.html 
+**Making_AllSorts.html** - A script to make the AllSorts Classifier (to view it, preview the html on: https://rawgit.com/Quarkins/Bioinformatics-Tidbits/master/Making_AllSorts.html
