@@ -20,7 +20,6 @@ shinyServer(function(input, output, session) {
         }
     })
     
-    
     output$expression <- renderPlot({
         
         if(length(input$gene) < 1){}   
@@ -61,11 +60,31 @@ shinyServer(function(input, output, session) {
         }
     })
     
+    output$density <- renderPlot({
+        sub = dd()[input$dense_gene,,drop=FALSE]
+        d<- density(as.numeric(sub[input$dense_gene,]))
+        bp<-plot(d,xlab="logFPKM",main = input$dense_gene,col="#4286f4",lwd=2)
+        bp 
+    })
+    
+    output$outliers <- renderTable({
+        #Get outliers
+        sub = t(dd()[input$dense_gene,,drop=FALSE])
+        bp = boxplot(sub)
+        tab = data.frame(outlier_sample = rownames(sub)[match(bp$out,sub)], logFPKM = bp$out)
+        tab
+    })
+    
+    
     updateSelectizeInput(session,"gene",
                          choices=row.names(MCRI_data$E),server=TRUE)
     
     updateSelectizeInput(session,"type",
                          choices=c("Non T-ALL","T-ALL","Excluded (Mostly AML)","All"),
                          server=TRUE,selected='All')
+    
+    updateSelectizeInput(session,"dense_gene",
+                         choices=row.names(MCRI_data$E),
+                         server=TRUE,selected='AHR')
     
 })

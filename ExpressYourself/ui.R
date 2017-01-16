@@ -16,9 +16,13 @@ shinyUI(fluidPage(
     selectizeInput("type",label="Sub-Type",
                    choices=NULL,multiple=FALSE),
     
+    selectizeInput("dense_gene",label="Gene for density plot",
+                   choices=NULL,multiple=FALSE),
     
     mainPanel(
         plotOutput("expression"),
-        plotOutput("boxplot")
+        plotOutput("boxplot"),
+        plotOutput("density"),
+        tableOutput("outliers")
     )
 ))
