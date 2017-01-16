@@ -70,7 +70,7 @@ shinyServer(function(input, output, session) {
     output$outliers <- renderTable({
         #Get outliers
         sub = t(dd()[input$dense_gene,,drop=FALSE])
-        bp = boxplot(sub)
+        bp = boxplot(sub,plot=FALSE)
         tab = data.frame(outlier_sample = rownames(sub)[match(bp$out,sub)], logFPKM = bp$out)
         tab
     })
