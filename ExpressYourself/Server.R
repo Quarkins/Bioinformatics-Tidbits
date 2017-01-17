@@ -10,13 +10,13 @@ shinyServer(function(input, output, session) {
     
     dd <- reactive({
         if(input$type != "All"){
-            selected = MCRI_target[MCRI_target$Cell_type == input$type,]
-            m <- match(selected$Sample,colnames(MCRI_data$E))
+            selected = MCRI_target[MCRI_target$Cell_Type == input$type,]
+            m <- match(selected$Sample,colnames(MCRI_data))
             m <-m[!is.na(m)]
-            MCRI_data$E[,m,drop=FALSE]
+            MCRI_data[,m,drop=FALSE]
         }
         else{
-            MCRI_data$E
+            MCRI_data
         }
     })
     
@@ -77,14 +77,14 @@ shinyServer(function(input, output, session) {
     
     
     updateSelectizeInput(session,"gene",
-                         choices=row.names(MCRI_data$E),server=TRUE)
+                         choices=row.names(MCRI_data),server=TRUE)
     
     updateSelectizeInput(session,"type",
-                         choices=c("Non T-ALL","T-ALL","Excluded (Mostly AML)","All"),
+                         choices=c(unique(MCRI_target$Cell_Type),"All"),
                          server=TRUE,selected='All')
     
     updateSelectizeInput(session,"dense_gene",
-                         choices=row.names(MCRI_data$E),
+                         choices=row.names(MCRI_data),
                          server=TRUE,selected='AHR')
     
 })

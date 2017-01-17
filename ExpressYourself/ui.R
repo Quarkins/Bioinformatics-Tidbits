@@ -1,7 +1,5 @@
 library(shiny)
 library(limma)
-library(plotly)
-
 
 shinyUI(fluidPage(
     
