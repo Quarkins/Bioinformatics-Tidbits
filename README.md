@@ -16,3 +16,5 @@ A collection of scripts and files used whilst bioinformagicianing
 **Making_AllSorts.Rmd** - A script to make the AllSorts Classifier (really messy, not cleaned)
 
 **Making_AllSorts.html** - A script to make the AllSorts Classifier (to view it, preview the html on: https://rawgit.com/Quarkins/Bioinformatics-Tidbits/master/Making_AllSorts.html
+
+**Combined Dec2016** - A script which combines all the counts and target data of samples measured at MCRI and then classifies them and constructs RData objects used by the Express Yourself R Shiny App
