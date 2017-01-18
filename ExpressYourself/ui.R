@@ -1,5 +1,8 @@
 library(shiny)
 library(limma)
+library(RColorBrewer)
+library(ggplot2)
+library(tidyr)
 
 shinyUI(fluidPage(
     
@@ -14,15 +17,15 @@ shinyUI(fluidPage(
     selectizeInput("type",label="Sub-Type",
                    choices=NULL,multiple=FALSE),
     
-    selectizeInput("dense_gene",label="Gene for density plot",
+    selectizeInput("dense_gene",label="Get outliers for gene:",
                    choices=NULL,multiple=FALSE),
     
     mainPanel(
+        tableOutput("outliers"),
         plotOutput("expression"),
         plotOutput("boxplot"),
         plotOutput("density"),
-        tableOutput("outliers"),
-        plotOutput("MDS"),
-        tableOutput("classified")
+        tableOutput("classified"),
+        plotOutput("MDS")
     )
 ))

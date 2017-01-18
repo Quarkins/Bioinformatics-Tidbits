@@ -1,6 +1,8 @@
 library(shiny)
 library(limma)
 library(RColorBrewer)
+library(ggplot2)
+library(tidyr)
 
 #Load in the data
 MCRI_data <- readRDS("Data/MCRI.Rds")
@@ -8,6 +10,7 @@ MCRI_target <- readRDS("Data/MCRI_target.Rds")
 
 shinyServer(function(input, output, session) {
     
+    #First reactively subset dataset  and targets based on Cell type
     dd <- reactive({
         if(input$type != "All"){
             selected = MCRI_target[MCRI_target$Cell_Type == input$type,]
@@ -30,21 +33,30 @@ shinyServer(function(input, output, session) {
         }
     })
     
+    #Now reactively make the dataset ggplotable!
+    dg <- reactive({
+        if(length(input$gene) < 1){}
+        if(length(input$gene) == 1){
+            tidier = data.frame(Sample = colnames(dd()),Genes=input$gene,logFPKM=dd()[input$gene,])
+        }
+        else{
+            ngenes = length(input$gene)
+            messy = as.data.frame(t(dd()[input$gene,]))
+            messy$Sample = row.names(messy) #Get sample row names as a variable
+            tidier = messy %>% gather(Genes,logFPKM,c(1:ngenes))
+            tidier
+        }
+    })
+    
     
     output$expression <- renderPlot({
         
         if(length(input$gene) < 1){}   
         
         else{
-            if(length(input$gene) >1) {
-                stripchart(dd()[input$gene,] ~ row.names(dd()[input$gene,]) ,ylab="Log FPKM",
-                           pch=16,method="jitter",col="orange",vertical=TRUE)
-            }
-            else{
-                stripchart(dd()[input$gene,],xlab="Log FPKM", ylab=input$gene,
-                           pch=16,method="jitter",col="orange")
-                
-            }
+            q <- ggplot(dg(),aes(x=factor(Genes),y=logFPKM,fill=factor(Genes),col=factor(Genes)))
+            q + geom_jitter() + theme_bw() + 
+                theme(axis.title.x=element_blank(),legend.position="none")
             
         }
      
@@ -52,30 +64,20 @@ shinyServer(function(input, output, session) {
     
  
     output$boxplot <- renderPlot({
-        
-        
         if(length(input$gene) < 1){}
-        else if(length(input$gene) == 1){
-            sub = t(dd()[input$gene,,drop=FALSE])
-            bp = boxplot(sub,ylab="Log CPM",xlab=input$gene,pch=16,outcol='red',col=rgb(226/255,9/255,172/255,0.2),border="#e209ac")
-            bp 
-            if(length(bp$out) > 0){
-                text(rep(0.92,length(bp$out)),bp$out,
-                     rownames(sub)[match(bp$out,sub)])
-            }
-        }
         else{
-            sub = t(dd()[input$gene,])
-            bp = boxplot(sub,ylab="Log CPM",xlab="Gene(s)",pch=16,outcol='red',col=rgb(226/255,9/255,172/255,0.4),border="#e209ac")
-            bp
+            q <- ggplot(dg(),aes(x=factor(Genes),y=logFPKM,fill=factor(Genes),col=factor(Genes)))
+            q + geom_boxplot(alpha=0.8) + theme_bw() + 
+                theme(axis.title.x=element_blank(),legend.position="none") 
         }
     })
     
     output$density <- renderPlot({
-        sub = dd()[input$dense_gene,,drop=FALSE]
-        d<- density(as.numeric(sub[input$dense_gene,]))
-        bp<-plot(d,xlab="logFPKM",main = input$dense_gene,col="#4286f4",lwd=2)
-        bp 
+        if(length(input$gene) < 1){}
+        else{
+            q <- ggplot(dg())
+            q + geom_density(aes(logFPKM,col=factor(Genes),fill=factor(Genes)),alpha=0.1) + theme_bw() + theme(legend.position="none")
+        }
     })
     
     output$outliers <- renderTable({
@@ -97,7 +99,11 @@ shinyServer(function(input, output, session) {
     output$classified <- renderTable({
         if(length(input$gene) < 1){ dt()}
         else{
-            combo_breaker = cbind(dt(),t(dd()[input$gene,]))
+            if(length(input$gene) == 1){ 
+                combo_breaker = dt()
+                combo_breaker[,input$gene] = dd()[input$gene,]
+            }
+            else{ combo_breaker = cbind(dt(),t(dd()[input$gene,])) }
             combo_breaker
         }
     })
