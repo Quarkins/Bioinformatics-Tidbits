@@ -37,11 +37,11 @@ shinyServer(function(input, output, session) {
         
         else{
             if(length(input$gene) >1) {
-                stripchart(dd()[input$gene,] ~ row.names(dd()[input$gene,]) ,ylab="Log CPM",
+                stripchart(dd()[input$gene,] ~ row.names(dd()[input$gene,]) ,ylab="Log FPKM",
                            pch=16,method="jitter",col="orange",vertical=TRUE)
             }
             else{
-                stripchart(dd()[input$gene,],xlab="Log CPM", ylab=input$gene,
+                stripchart(dd()[input$gene,],xlab="Log FPKM", ylab=input$gene,
                            pch=16,method="jitter",col="orange")
                 
             }
@@ -95,7 +95,11 @@ shinyServer(function(input, output, session) {
     })
     
     output$classified <- renderTable({
-        dt()
+        if(length(input$gene) < 1){ dt()}
+        else{
+            combo_breaker = cbind(dt(),t(dd()[input$gene,]))
+            combo_breaker
+        }
     })
     
     updateSelectizeInput(session,"gene",
