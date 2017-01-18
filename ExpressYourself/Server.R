@@ -81,11 +81,25 @@ shinyServer(function(input, output, session) {
     })
     
     output$outliers <- renderTable({
-        #Get outliers
-        sub = t(dd()[input$dense_gene,,drop=FALSE])
-        bp = boxplot(sub,plot=FALSE)
-        tab = data.frame(outlier_sample = rownames(sub)[match(bp$out,sub)], logFPKM = bp$out)
+        #Make empty dataframe
+        tab = data.frame(Outlier_Sample = character(), Gene = character(), logFPKM = double())
+        
+        #Make a function to find outliers and add to table
+        extract_outliers <- function(tab,gene){
+            sub = dd()[gene,]
+            bp = boxplot(sub,plot=FALSE)
+            temp_tab = cbind(names(bp$out), bp$out, rep(gene,length(bp$out)))
+            tab = rbind(tab,temp_tab) #append temp tab to main table
+            return(tab)
+        }
+        
+        #Loop through and concatenate outlier table
+        for(gene in input$gene){
+            tab = extract_outliers(tab,gene)
+        }
+        names(tab) = c("Outlier_Sample","logFPKM","Gene")
         tab
+
     })
     
     
@@ -109,14 +123,11 @@ shinyServer(function(input, output, session) {
     })
     
     updateSelectizeInput(session,"gene",
-                         choices=row.names(MCRI_data),server=TRUE)
+                         choices=row.names(MCRI_data),server=TRUE,selected='ABL1')
     
     updateSelectizeInput(session,"type",
                          choices=c(unique(MCRI_target$Cell_Type),"All"),
                          server=TRUE,selected='All')
     
-    updateSelectizeInput(session,"dense_gene",
-                         choices=row.names(MCRI_data),
-                         server=TRUE,selected='AHR')
     
 })

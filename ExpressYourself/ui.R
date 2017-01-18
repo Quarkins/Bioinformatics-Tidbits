@@ -17,14 +17,12 @@ shinyUI(fluidPage(
     selectizeInput("type",label="Sub-Type",
                    choices=NULL,multiple=FALSE),
     
-    selectizeInput("dense_gene",label="Get outliers for gene:",
-                   choices=NULL,multiple=FALSE),
     
     mainPanel(
-        tableOutput("outliers"),
         plotOutput("expression"),
         plotOutput("boxplot"),
         plotOutput("density"),
+        #tableOutput("outliers"),
         tableOutput("classified"),
         plotOutput("MDS")
     )
