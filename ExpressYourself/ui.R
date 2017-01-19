@@ -3,6 +3,7 @@ library(limma)
 library(RColorBrewer)
 library(ggplot2)
 library(tidyr)
+library(plotly)
 
 shinyUI(fluidPage(
     
@@ -19,7 +20,7 @@ shinyUI(fluidPage(
     
     
     mainPanel(
-        plotOutput("expression"),
+        plotlyOutput("expression"),
         plotOutput("boxplot"),
         plotOutput("density"),
         #tableOutput("outliers"),
