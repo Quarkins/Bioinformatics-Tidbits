@@ -1,6 +1,11 @@
 # Bioinformatics-Tidbits
 A collection of scripts and files used whilst bioinformagicianing
 
+<p align="center">
+<img src= https://github.com/Quarkins/Bioinformatics-Tidbits/blob/master/Bioinformagics.png height=250/>
+</p>
+
+
 **BioNetwork_2.R** - A script to produce a network graph of the MCRI bioinformatics collaborations with other groups based on a google docs spreadsheet.
 
 **DEXY.R** - A script to extract Differential Exon Usage using DexSeq from a counts matrix (rows exons, columns samples) then summarised to per gene q values.
@@ -18,3 +23,9 @@ A collection of scripts and files used whilst bioinformagicianing
 **Making_AllSorts.html** - A script to make the AllSorts Classifier (to view it, preview the html on: https://rawgit.com/Quarkins/Bioinformatics-Tidbits/master/Making_AllSorts.html
 
 **Combined Dec2016** - A script which combines all the counts and target data of samples measured at MCRI and then classifies them and constructs RData objects used by the Express Yourself R Shiny App
+
+**MakeSashimi.R** - A little script used by the ST paper in order to make a sashimi style plot using GViz.
+
+**varCalling.sh** - A script to run the standard rna seq GATK variant calling pipeline on a superTranscriptome. This (or a variant of this) was used for the ST paper.
+
+**BashSTPaperCommands.sh** - A bunch of bash and command line instructions for running various miscellaneous steps of the ST paper annalysis.
