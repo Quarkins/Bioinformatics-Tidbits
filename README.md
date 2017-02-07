@@ -10,7 +10,10 @@ A collection of scripts and files used whilst bioinformagicianing
 
 **DEXY.R** - A script to extract Differential Exon Usage using DexSeq from a counts matrix (rows exons, columns samples) then summarised to per gene q values.
 
-**DIY.html** - An html file (based on a Rmarkdown Rstudio notebook) which is a tutorial on how make your own ALL classifier, in this example i base the classifier of a Lund dataset.
+**DIY.html** - An html file (based on a Rmarkdown Rstudio notebook) which is a tutorial on how make your own ALL classifier, in this example i base the classifier of a simulated dataset.
+
+**ClassifierBuilder.ipynb** - A python notebook  which is a tutorial on how make your own ALL classifier, in this example i base the classifier of a smulated dataset.
+
 
 **Diff_Ex_Skeleton.Rmd** - A cheeky R markdown skeleton i made for a _standard_ Differential Expression RNA seq analysis, this was made in the early days so it probably isn't that advanced.
 
